@@ -42,6 +42,15 @@ require "rufus/scheduler"
 #   }
 # }
 #
+# input {
+#   openwhisk_logs {
+#     host => "openwhisk.ng.bluemix.net"
+#     username => "sample_user@email.com"
+#     password => "some_password"
+#     namespace => ""
+#   }
+# }
+#
 # output {
 #   stdout {
 #     codec => rubydebug
@@ -87,6 +96,10 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   # The name and the url will be passed in the outputed event
   config :urls, :validate => :hash, :required => true
 
+  config :host, :validate => :string, :required => true
+  config :username, :validate => :string, :required => true
+  config :password, :validate => :string, :required => true
+
   # How often (in seconds) the urls will be called
   # DEPRECATED. Use 'schedule' option instead.
   # If both interval and schedule options are specified, interval
@@ -111,6 +124,8 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   # hash of metadata.
   config :metadata_target, :validate => :string, :default => '@metadata'
 
+  config :namespace, :validate => :string, :default => '_'
+
   public
   Schedule_types = %w(cron every at in)
   def register
@@ -130,6 +145,12 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   private
   def setup_requests!
     @requests = Hash[@urls.map {|name, url| [name, normalize_request(url)] }]
+  end
+
+  private
+  def construct_request(opts)
+    url = "https://#{opts['host']}/api/v1/namespaces/#{opts['namespace']}/activations"
+    res = [:get, url]
   end
 
   private

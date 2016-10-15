@@ -11,6 +11,10 @@ describe LogStash::Inputs::HTTP_Poller do
   }
   let(:default_name) { "url1 " }
   let(:default_url) { "http://localhost:1827" }
+  let(:default_host) { "openwhisk.ng.bluemix.net" }
+  let(:default_username) { "user@email.com" }
+  let(:default_password) { "my_password" }
+  let(:default_namespace) { "user_namespace" }
   let(:default_urls) {
     {
       default_name => default_url
@@ -20,6 +24,10 @@ describe LogStash::Inputs::HTTP_Poller do
     {
       "schedule" => default_schedule,
       "urls" => default_urls,
+      "host" => default_host,
+      "username" => default_username,
+      "password" => default_password,
+      "namespace" => default_namespace,
       "codec" => "json",
       "metadata_target" => metadata_target
     }
@@ -52,6 +60,81 @@ describe LogStash::Inputs::HTTP_Poller do
         end
 
         subject.send(:run_once, queue) # :run_once is a private method
+      end
+    end
+
+    describe "constructor" do 
+      context "given options missing host" do
+        let(:opts) {
+          opts = default_opts.clone
+          opts.delete("host")
+          opts
+        }
+
+        it "should raise ConfigurationError" do
+          expect { klass.new(opts) }.to raise_error(LogStash::ConfigurationError)
+        end
+      end
+
+      context "given options missing username" do
+        let(:opts) {
+          opts = default_opts.clone
+          opts.delete("username")
+          opts
+        }
+
+        it "should raise ConfigurationError" do
+          expect { klass.new(opts) }.to raise_error(LogStash::ConfigurationError)
+        end
+      end
+ 
+      context "given options missing password" do
+        let(:opts) {
+          opts = default_opts.clone
+          opts.delete("password")
+          opts
+        }
+
+        it "should raise ConfigurationError" do
+          expect { klass.new(opts) }.to raise_error(LogStash::ConfigurationError)
+        end
+      end
+ 
+      context "given options missing namespace" do
+        let(:opts) {
+          opts = default_opts.clone
+          opts.delete("namespace")
+          opts
+        }
+
+        it "should use default namespace" do
+          instance = klass.new(opts)
+          expect(instance.namespace).to eql("_")
+        end
+      end
+ 
+      context "given options with namespace" do
+        it "should use options namespace" do
+          instance = klass.new(default_opts)
+          expect(instance.namespace).to eql(default_namespace)
+        end
+      end
+    end
+
+    describe "construct request spec" do 
+      context "with normal options" do 
+        let(:result) { subject.send(:construct_request, default_opts) }
+
+        it "should set method correctly" do 
+          expect(result[0]).to eql(:get)
+        end
+
+        it "should set url correctly" do 
+          expect(result[1]).to eql("https://#{default_host}/api/v1/namespaces/#{default_namespace}/activations")
+        end
+
+        # auth...
+        # time since...
       end
     end
 
