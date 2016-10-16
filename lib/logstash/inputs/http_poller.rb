@@ -134,6 +134,9 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
     @logger.info("Registering http_poller Input", :type => @type,
                  :urls => @urls, :interval => @interval, :schedule => @schedule, :timeout => @timeout)
 
+    # we will start polling for logs since the current epoch
+    @logs_since = Time.now.to_i * 1000
+
     setup_requests!
   end
 
@@ -150,7 +153,9 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   private
   def construct_request(opts)
     url = "https://#{opts['host']}/api/v1/namespaces/#{opts['namespace']}/activations"
-    res = [:get, url]
+    auth = {user: opts['username'], pass: opts['password']} 
+    query = {docs: true, limit: 0, skip: 0, since: @logs_since}
+    res = [:get, url, {:auth => auth, :query => query}]
   end
 
   private

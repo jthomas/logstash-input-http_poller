@@ -41,6 +41,12 @@ describe LogStash::Inputs::HTTP_Poller do
       subject.register
     end
 
+    describe "#register" do 
+      it "should set logs since to time since epoch" do
+        expect(subject.instance_variable_get("@logs_since")).to eql(Time.now.to_i * 1000)
+      end
+    end
+
     describe "#run" do
       it "should setup a scheduler" do
         runner = Thread.new do
@@ -133,7 +139,14 @@ describe LogStash::Inputs::HTTP_Poller do
           expect(result[1]).to eql("https://#{default_host}/api/v1/namespaces/#{default_namespace}/activations")
         end
 
-        # auth...
+        it "should set auth correctly" do
+          expect(result[2][:auth]).to eql({user: default_username, pass: default_password})
+        end
+
+        it "should set query string correctly" do
+          expect(result[2][:query]).to eql({docs: true, limit: 0, skip: 0, since: subject.instance_variable_get('@logs_since')})
+        end
+        #
         # time since...
       end
     end
