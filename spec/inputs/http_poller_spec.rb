@@ -493,7 +493,7 @@ describe LogStash::Inputs::HTTP_Poller do
     end
 
     describe "a valid request and decoded response" do
-      let(:payload) { {"a" => 2, "hello" => ["a", "b", "c"]} }
+      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "hello" => ["a", "b", "c"]}] }
       let(:opts) { default_opts }
       let(:instance) {
         klass.new(opts)
@@ -514,6 +514,7 @@ describe LogStash::Inputs::HTTP_Poller do
                              :code => code
         )
         allow(instance).to receive(:decorate)
+        instance.instance_variable_set("@logs_since", 0)
         instance.send(:run_once, queue)
       end
 
@@ -523,6 +524,10 @@ describe LogStash::Inputs::HTTP_Poller do
 
       it "should decorate the event" do
         expect(instance).to have_received(:decorate).once
+      end
+
+      it "should update the time since" do
+        expect(instance.instance_variable_get("@logs_since")).to eql(payload[0]["start"] + 1)
       end
 
       include_examples("matching metadata")
@@ -579,6 +584,16 @@ describe LogStash::Inputs::HTTP_Poller do
           # this normalizes the payload to java types
           payload_normalized = LogStash::Json.load(LogStash::Json.dump(payload))
           expect(event.get(target)).to include(payload_normalized)
+        end
+      end
+
+      context "with multiple activations" do
+        let(:payload) { [{"start" => 1476818509288},{"start" => 1476818509289},{"start" => 1476818509287} ] }
+
+        it "should update logs since to latest epoch" do
+          instance.instance_variable_set("@logs_since", 0)
+          instance.send(:run_once, queue)
+          expect(instance.instance_variable_get("@logs_since")).to eql(payload[1]["start"] + 1)
         end
       end
     end

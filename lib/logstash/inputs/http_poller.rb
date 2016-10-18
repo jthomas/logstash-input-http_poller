@@ -268,7 +268,18 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   def handle_success(queue, name, request, response, execution_time)
     @codec.decode(response.body) do |decoded|
       event = @target ? LogStash::Event.new(@target => decoded.to_hash) : decoded
+      update_logs_since(decoded.to_hash)
       handle_decoded_event(queue, name, request, response, event, execution_time)
+    end
+  end
+
+  # if activation event has a start time greater than the 
+  # previous highest activation start time, increment the query
+  # string parameter we use to retrieve logs.
+  private
+  def update_logs_since(activation)
+    if (activation["start"] >= @logs_since)
+      @logs_since = activation["start"] + 1
     end
   end
 
