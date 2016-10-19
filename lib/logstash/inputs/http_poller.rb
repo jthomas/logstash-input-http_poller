@@ -137,6 +137,9 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
     # we will start polling for logs since the current epoch
     @logs_since = Time.now.to_i * 1000
 
+    # activation ids from previous poll used to control what is indexed
+    @activation_ids = Set.new
+
     setup_requests!
   end
 
@@ -266,20 +269,32 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
 
   private
   def handle_success(queue, name, request, response, execution_time)
+    activation_ids = Set.new
+
     @codec.decode(response.body) do |decoded|
-      event = @target ? LogStash::Event.new(@target => decoded.to_hash) : decoded
-      update_logs_since(decoded.to_hash)
-      handle_decoded_event(queue, name, request, response, event, execution_time)
+      activation_id = decoded.to_hash["activationId"]
+
+      ## ignore results we have previously seen
+      if !@activation_ids.include?(activation_id)
+        event = @target ? LogStash::Event.new(@target => decoded.to_hash) : decoded
+        update_logs_since(decoded.to_hash)
+        handle_decoded_event(queue, name, request, response, event, execution_time)
+      end
+
+      activation_ids.add(activation_id)
     end
+
+    @activation_ids = activation_ids
   end
 
-  # if activation event has a start time greater than the 
-  # previous highest activation start time, increment the query
-  # string parameter we use to retrieve logs.
+  # we want to poll for the last sixty seconds worth of logs. 
+  # if this activation start time is more than a minute ahead of
+  # the current polling query, move the parameter forward to this point.
   private
   def update_logs_since(activation)
-    if (activation["start"] >= @logs_since)
-      @logs_since = activation["start"] + 1
+    updated_logs_since = activation["start"] - (60 * 1000)
+    if (updated_logs_since >= @logs_since)
+      @logs_since = updated_logs_since
     end
   end
 

@@ -69,6 +69,35 @@ describe LogStash::Inputs::HTTP_Poller do
       end
     end
 
+    describe "#update_logs_since" do
+      context "given activation sixty seconds after last activation" do
+        let(:now) { Time.now.to_i * 1000 }
+        let(:activation) { {"start" => now + (60 * 1000)} }
+        before do
+          subject.instance_variable_set("@logs_since", now - 1)
+          subject.send(:update_logs_since, activation)
+        end
+
+        it "should update logs since to sixty seconds ago" do
+          expect(subject.instance_variable_get("@logs_since")).to eql(now)
+        end
+      end
+
+      context "given activation fifty nine seconds after last activation" do
+        let(:now) { Time.now.to_i * 1000 }
+        let(:activation) { {"start" => now + (59 * 1000) } }
+        before do
+          subject.instance_variable_set("@logs_since", now)
+          subject.send(:update_logs_since, activation)
+        end
+
+        it "should not update logs since" do
+          expect(subject.instance_variable_get("@logs_since")).to eql(now)
+        end
+      end
+ 
+    end
+
     describe "constructor" do 
       context "given options missing host" do
         let(:opts) {
@@ -493,7 +522,7 @@ describe LogStash::Inputs::HTTP_Poller do
     end
 
     describe "a valid request and decoded response" do
-      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "hello" => ["a", "b", "c"]}] }
+      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "activationId" => "some_id"}] }
       let(:opts) { default_opts }
       let(:instance) {
         klass.new(opts)
@@ -528,6 +557,10 @@ describe LogStash::Inputs::HTTP_Poller do
 
       it "should update the time since" do
         expect(instance.instance_variable_get("@logs_since")).to eql(payload[0]["start"] + 1)
+      end
+
+      it "should retain activation ids" do
+        expect(instance.instance_variable_get("@activation_ids")).to eql(Set.new ["some_id"])
       end
 
       include_examples("matching metadata")
@@ -588,14 +621,30 @@ describe LogStash::Inputs::HTTP_Poller do
       end
 
       context "with multiple activations" do
-        let(:payload) { [{"start" => 1476818509288},{"start" => 1476818509289},{"start" => 1476818509287} ] }
+        let(:payload) { [{"start" => 1476818509288, "activationId" => "1"},{"start" => 1476818509289, "activationId" => "2"},{"start" => 1476818509287, "activationId" => "3"} ] }
 
         it "should update logs since to latest epoch" do
           instance.instance_variable_set("@logs_since", 0)
+          instance.instance_variable_set("@activation_ids", Set.new)
           instance.send(:run_once, queue)
-          expect(instance.instance_variable_get("@logs_since")).to eql(payload[1]["start"] + 1)
+          expect(instance.instance_variable_get("@logs_since")).to eql(payload[1]["start"] - (60 * 1000))
+          expect(instance.instance_variable_get("@activation_ids")).to eql(Set.new ["1", "2", "3"])
         end
       end
+
+      context "with previous activations" do
+        let(:payload) { [{"start" => 1476818509288, "activationId" => "some_id"}] }
+
+        subject(:size) {
+          queue.size()
+        }
+        it "should not add activation to queue" do
+          instance.instance_variable_set("@activation_ids", Set.new(["some_id"]))
+          instance.send(:run_once, queue)
+          expect(subject).to eql(0) 
+        end
+      end
+ 
     end
   end
 
