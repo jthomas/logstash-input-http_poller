@@ -44,7 +44,7 @@ require "rufus/scheduler"
 #
 # input {
 #   openwhisk_logs {
-#     host => "openwhisk.ng.bluemix.net"
+#     hostname => "openwhisk.ng.bluemix.net"
 #     username => "sample_user@email.com"
 #     password => "some_password"
 #     namespace => ""
@@ -96,7 +96,7 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   # The name and the url will be passed in the outputed event
   config :urls, :validate => :hash, :required => true
 
-  config :host, :validate => :string, :required => true
+  config :hostname, :validate => :string, :required => true
   config :username, :validate => :string, :required => true
   config :password, :validate => :string, :required => true
 
@@ -155,7 +155,7 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
 
   private
   def construct_request(opts)
-    url = "https://#{opts['host']}/api/v1/namespaces/#{opts['namespace']}/activations"
+    url = "https://#{opts['hostname']}/api/v1/namespaces/#{opts['namespace']}/activations"
     auth = {user: opts['username'], pass: opts['password']} 
     query = {docs: true, limit: 0, skip: 0, since: @logs_since}
     res = [:get, url, {:auth => auth, :query => query}]
@@ -247,10 +247,9 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   end
 
   def run_once(queue)
-    @requests.each do |name, request|
-      request_async(queue, name, request)
-    end
+    request = construct_request({"hostname" => @hostname, "username" => @username, "password" => @password, "namespace" => @namespace})
 
+    request_async(queue, "openwhisk", request)
     client.execute!
   end
 
@@ -277,7 +276,7 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
       ## ignore results we have previously seen
       if !@activation_ids.include?(activation_id)
         event = @target ? LogStash::Event.new(@target => decoded.to_hash) : decoded
-        update_logs_since(decoded.to_hash)
+        update_logs_since(decoded.to_hash["end"])
         handle_decoded_event(queue, name, request, response, event, execution_time)
       end
 
@@ -287,14 +286,14 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
     @activation_ids = activation_ids
   end
 
-  # we want to poll for the last sixty seconds worth of logs. 
-  # if this activation start time is more than a minute ahead of
-  # the current polling query, move the parameter forward to this point.
   private
-  def update_logs_since(activation)
-    updated_logs_since = activation["start"] - (60 * 1000)
-    if (updated_logs_since >= @logs_since)
-      @logs_since = updated_logs_since
+  def update_logs_since(ms_since_epoch)
+    # actions have a maximum timeout for five minutes
+    max_action_time_ms = 5 * 60 * 1000
+    next_logs_since = ms_since_epoch - max_action_time_ms
+
+    if (next_logs_since > @logs_since)
+      @logs_since = next_logs_since
     end
   end
 

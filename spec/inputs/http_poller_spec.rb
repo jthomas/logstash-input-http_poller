@@ -9,9 +9,9 @@ describe LogStash::Inputs::HTTP_Poller do
   let(:default_schedule) {
     { "cron" => "* * * * * UTC" }
   }
-  let(:default_name) { "url1 " }
+  let(:default_name) { "openwhisk" }
   let(:default_url) { "http://localhost:1827" }
-  let(:default_host) { "openwhisk.ng.bluemix.net" }
+  let(:default_hostname) { "openwhisk.ng.bluemix.net" }
   let(:default_username) { "user@email.com" }
   let(:default_password) { "my_password" }
   let(:default_namespace) { "user_namespace" }
@@ -24,7 +24,7 @@ describe LogStash::Inputs::HTTP_Poller do
     {
       "schedule" => default_schedule,
       "urls" => default_urls,
-      "host" => default_host,
+      "hostname" => default_hostname,
       "username" => default_username,
       "password" => default_password,
       "namespace" => default_namespace,
@@ -60,49 +60,53 @@ describe LogStash::Inputs::HTTP_Poller do
 
     describe "#run_once" do
       it "should issue an async request for each url" do
-        default_urls.each do |name, url|
-          normalized_url = subject.send(:normalize_request, url)
-          expect(subject).to receive(:request_async).with(queue, name, normalized_url).once
-        end
+        #default_urls.each do |name, url|
+          # normalized_url = subject.send(:normalize_request, url)
+        constructed_request = subject.send(:construct_request, default_opts)
+        expect(subject).to receive(:request_async).with(queue, default_name, constructed_request).once
+        #end
 
         subject.send(:run_once, queue) # :run_once is a private method
       end
     end
 
     describe "#update_logs_since" do
-      context "given activation sixty seconds after last activation" do
+      context "given current time less than five minutes ahead of last poll activation" do
         let(:now) { Time.now.to_i * 1000 }
-        let(:activation) { {"start" => now + (60 * 1000)} }
+        let(:previous) {
+          now - (5 * 60 * 1000) + 1
+        }
         before do
-          subject.instance_variable_set("@logs_since", now - 1)
-          subject.send(:update_logs_since, activation)
-        end
-
-        it "should update logs since to sixty seconds ago" do
-          expect(subject.instance_variable_get("@logs_since")).to eql(now)
-        end
-      end
-
-      context "given activation fifty nine seconds after last activation" do
-        let(:now) { Time.now.to_i * 1000 }
-        let(:activation) { {"start" => now + (59 * 1000) } }
-        before do
-          subject.instance_variable_set("@logs_since", now)
-          subject.send(:update_logs_since, activation)
+          subject.instance_variable_set("@logs_since", previous)
+          subject.send(:update_logs_since, now)
         end
 
         it "should not update logs since" do
-          expect(subject.instance_variable_get("@logs_since")).to eql(now)
+          expect(subject.instance_variable_get("@logs_since")).to eql(previous)
         end
       end
- 
+
+      context "given current time more than five minutes ahead of last poll activation" do
+        let(:now) { Time.now.to_i * 1000 }
+        let(:previous) {
+          now - (5 * 60 * 1000) - 1
+        }
+        before do
+          subject.instance_variable_set("@logs_since", previous)
+          subject.send(:update_logs_since, now)
+        end
+
+        it "should update logs since x" do
+          expect(subject.instance_variable_get("@logs_since")).to eql(now - 5 * 60 * 1000)
+        end
+      end
     end
 
     describe "constructor" do 
-      context "given options missing host" do
+      context "given options missing hostname" do
         let(:opts) {
           opts = default_opts.clone
-          opts.delete("host")
+          opts.delete("hostname")
           opts
         }
 
@@ -165,7 +169,7 @@ describe LogStash::Inputs::HTTP_Poller do
         end
 
         it "should set url correctly" do 
-          expect(result[1]).to eql("https://#{default_host}/api/v1/namespaces/#{default_namespace}/activations")
+          expect(result[1]).to eql("https://#{default_hostname}/api/v1/namespaces/#{default_namespace}/activations")
         end
 
         it "should set auth correctly" do
@@ -556,7 +560,7 @@ describe LogStash::Inputs::HTTP_Poller do
       end
 
       it "should update the time since" do
-        expect(instance.instance_variable_get("@logs_since")).to eql(payload[0]["start"] + 1)
+        expect(instance.instance_variable_get("@logs_since")).to eql(payload[0]["end"] - (5 * 60 * 1000))
       end
 
       it "should retain activation ids" do
@@ -621,13 +625,13 @@ describe LogStash::Inputs::HTTP_Poller do
       end
 
       context "with multiple activations" do
-        let(:payload) { [{"start" => 1476818509288, "activationId" => "1"},{"start" => 1476818509289, "activationId" => "2"},{"start" => 1476818509287, "activationId" => "3"} ] }
+        let(:payload) { [{"end" => 1476818509288, "activationId" => "1"},{"end" => 1476818509289, "activationId" => "2"},{"end" => 1476818509287, "activationId" => "3"} ] }
 
         it "should update logs since to latest epoch" do
           instance.instance_variable_set("@logs_since", 0)
           instance.instance_variable_set("@activation_ids", Set.new)
           instance.send(:run_once, queue)
-          expect(instance.instance_variable_get("@logs_since")).to eql(payload[1]["start"] - (60 * 1000))
+          expect(instance.instance_variable_get("@logs_since")).to eql(payload[1]["end"] - (5 * 60 * 1000))
           expect(instance.instance_variable_get("@activation_ids")).to eql(Set.new ["1", "2", "3"])
         end
       end
