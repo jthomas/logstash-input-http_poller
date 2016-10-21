@@ -5,6 +5,7 @@ require "logstash/plugin_mixins/http_client"
 require "socket" # for Socket.gethostname
 require "manticore"
 require "rufus/scheduler"
+require 'json'
 
 # This Logstash input plugin allows you to drain OpenWhisk Activation logs, decoding the output into event(s), and
 # send them on their merry way. Using the OpenWhisk platform API, we poll the activation logs API according to the config schedule.
@@ -184,6 +185,7 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
 
       ## ignore results we have previously seen
       if !@activation_ids.include?(activation_id)
+        sanitize(decoded)
         event = @target ? LogStash::Event.new(@target => decoded.to_hash) : decoded
         update_logs_since(decoded.to_hash["end"])
         handle_decoded_event(queue, name, request, response, event, execution_time)
@@ -193,6 +195,15 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
     end
 
     @activation_ids = activation_ids
+  end
+
+  # elastic search cannot handle attributes which change types.
+  # serialise annotations to JSON strings
+  private
+  def sanitize(activation)
+    annotations = activation.get("annotations")
+    annotations.each {|a| a["value"] = a["value"].to_json}
+    activation.set("annotations", annotations)
   end
 
   # updates the query parameter for the next request

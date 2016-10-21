@@ -428,7 +428,7 @@ describe LogStash::Inputs::OpenWhisk do
     end
 
     describe "a valid request and decoded response" do
-      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "activationId" => "some_id"}] }
+      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "activationId" => "some_id", annotations: []}] }
       let(:opts) { default_opts }
       let(:instance) {
         klass.new(opts)
@@ -496,8 +496,17 @@ describe LogStash::Inputs::OpenWhisk do
         end
       end
 
+      context "with annotations" do
+        let(:annotations) { [{"key" => "a", "value" => { "child": "val" } }, {"key" => "b", "value" => "some_string"}] }
+        let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "activationId" => "some_id", "annotations" => annotations}] }
+
+        it "should serialise annotations to JSON strings" do
+          expect(event.to_hash["annotations"]).to eql([{"key" => "a", "value" => '{"child":"val"}'}, {"key" => "b", "value" => "\"some_string\""}])
+        end
+      end
+
       context "with multiple activations" do
-        let(:payload) { [{"end" => 1476818509288, "activationId" => "1"},{"end" => 1476818509289, "activationId" => "2"},{"end" => 1476818509287, "activationId" => "3"} ] }
+        let(:payload) { [{"end" => 1476818509288, "activationId" => "1", "annotations" => []},{"end" => 1476818509289, "activationId" => "2", "annotations" => []},{"end" => 1476818509287, "activationId" => "3", "annotations" => []} ] }
 
         it "should update logs since to latest epoch" do
           instance.instance_variable_set("@logs_since", 0)
@@ -509,7 +518,7 @@ describe LogStash::Inputs::OpenWhisk do
       end
 
       context "with previous activations" do
-        let(:payload) { [{"end" => 1476818509288, "activationId" => "some_id"}] }
+        let(:payload) { [{"end" => 1476818509288, "activationId" => "some_id", annotations => []}] }
 
         subject(:size) {
           queue.size()
