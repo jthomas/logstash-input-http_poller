@@ -1,18 +1,15 @@
-# Logstash HTTP input plugin
+# Logstash OpenWhisk input plugin
 
-[![Travis Build Status](https://travis-ci.org/logstash-plugins/logstash-input-http_poller.svg)](https://travis-ci.org/logstash-plugins/logstash-input-http_poller)
+[![Travis Build Status](https://travis-ci.org/jthomas/logstash-input-openwhisk.svg)](https://travis-ci.org/jthomas/logstash-input-openwhisk)
 
-This plugin is based off [logstash-input-rest](https://github.com/maximede/logstash-input-rest) by @maximede.
+This [Logstash](https://github.com/elastic/logstash) input plugin allows you to drain Activation logs from OpenWhisk. The HTTP polling service uses the [OpenWhisk API](https://github.com/openwhisk/openwhisk/blob/master/docs/reference.md) to retrieve logs, according to a user-defined schedule. Each activation instance is decoded to an event and forwarded into the system.
 
-This [Logstash](https://github.com/elastic/logstash) input plugin allows you to call an HTTP API, decode the output of it into event(s), and send them on their merry way.
-
-The idea behind this plugins came from a need to read springboot metrics endpoint, instead of configuring jmx to monitor my java application memory / gc/ etc.
-
-It is fully free and fully open source. The license is Apache 2.0, meaning you are pretty much free to use it however you want in whatever way.
+This plugin is based off [logstash-input-http_poller](https://github.com/logstash-plugins/logstash-input-http_poller).
 
 ## Config Example
 
-For config examples see `http_poller.rb` in `lib/logstash/inputs/` in this repo.
+For configuration documentation, see `openwhisk.rb` in `lib/logstash/inputs/` in this repo.
+Sample configuration files using this plugin are available in `examples`.
 
 ## Documentation
 
@@ -94,13 +91,3 @@ bin/plugin install --no-verify
 
 ```
 - Start Logstash and proceed to test the plugin
-
-## Contributing
-
-All contributions are welcome: ideas, patches, documentation, bug reports, complaints, and even something you drew up on a napkin.
-
-Programming is not a required skill. Whatever you've seen about open source and maintainers or community members  saying "send patches or die" - you will not see that here.
-
-It is more important to the community that you are able to contribute.
-
-For more information about contributing, see the [CONTRIBUTING](https://github.com/elastic/logstash/blob/master/CONTRIBUTING.md) file.
