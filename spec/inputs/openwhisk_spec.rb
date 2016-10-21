@@ -428,7 +428,7 @@ describe LogStash::Inputs::OpenWhisk do
     end
 
     describe "a valid request and decoded response" do
-      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "activationId" => "some_id", annotations: []}] }
+      let(:payload) { [{"start" => 1476818509288, "end" => 1476818509888, "activationId" => "some_id", "annotations" => []}] }
       let(:opts) { default_opts }
       let(:instance) {
         klass.new(opts)
@@ -518,7 +518,7 @@ describe LogStash::Inputs::OpenWhisk do
       end
 
       context "with previous activations" do
-        let(:payload) { [{"end" => 1476818509288, "activationId" => "some_id", annotations => []}] }
+        let(:payload) { [{"end" => 1476818509288, "activationId" => "some_id", "annotations" => []}] }
 
         subject(:size) {
           queue.size()
