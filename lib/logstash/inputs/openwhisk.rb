@@ -6,12 +6,12 @@ require "socket" # for Socket.gethostname
 require "manticore"
 require "rufus/scheduler"
 
-# This Logstash input plugin allows you to drain OpenWhisk Activation logs, decode the output of it into event(s), and
-# send them on their merry way. Using the OpenWhisk platform API, we poll the logs api according to the config schedule.
+# This Logstash input plugin allows you to drain OpenWhisk Activation logs, decoding the output into event(s), and
+# send them on their merry way. Using the OpenWhisk platform API, we poll the activation logs API according to the config schedule.
 # This plugin borrows heavily from the HTTP Poller input plugin. 
 #
 # ==== Example
-# Reads from a list of urls and decodes the body of the response with a codec.
+# Drain logs from an OpenWhisk platform instance.
 # The config should look like this:
 #
 # [source,ruby]
@@ -42,32 +42,6 @@ require "rufus/scheduler"
 # }
 # ----------------------------------
 #
-# Using the HTTP poller with custom a custom CA or self signed cert.
-#
-# If you have a self signed cert you will need to convert your server's certificate to a valid# `.jks` or `.p12` file. An easy way to do it is to run the following one-liner, substituting your server's URL for the placeholder `MYURL` and `MYPORT`.
-#
-# [source,ruby]
-# ----------------------------------
-# openssl s_client -showcerts -connect MYURL:MYPORT </dev/null 2>/dev/null|openssl x509 -outform PEM > downloaded_cert.pem; keytool -import -alias test -file downloaded_cert.pem -keystore downloaded_truststore.jks
-# ----------------------------------
-#
-# The above snippet will create two files `downloaded_cert.pem` and `downloaded_truststore.jks`. You will be prompted to set a password for the `jks` file during this process. To configure logstash use a config like the one that follows.
-#
-#
-# [source,ruby]
-# ----------------------------------
-#input {
-#  http_poller {
-#    urls => {
-#      myurl => "https://myhostname:1234"
-#    }
-#    truststore => "/path/to/downloaded_truststore.jks"
-#    truststore_password => "mypassword"
-#    interval => 30
-#  }
-#}
-# ----------------------------------
-#
 
 class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
   include LogStash::PluginMixins::HttpClient
@@ -76,10 +50,13 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
 
   default :codec, "json"
 
-  #
+  # OpenWhisk Platform Parameters
   config :hostname, :validate => :string, :required => true
   config :username, :validate => :string, :required => true
   config :password, :validate => :string, :required => true
+
+  # Optional OpenWhisk namespace, defaults to user account namespace.
+  config :namespace, :validate => :string, :default => '_'
 
   # How often (in seconds) the urls will be called
   # DEPRECATED. Use 'schedule' option instead.
@@ -105,8 +82,6 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
   # hash of metadata.
   config :metadata_target, :validate => :string, :default => '@metadata'
 
-  config :namespace, :validate => :string, :default => '_'
-
   public
   Schedule_types = %w(cron every at in)
   def register
@@ -118,7 +93,9 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
     # we will start polling for logs since the current epoch
     @logs_since = Time.now.to_i * 1000
 
-    # activation ids from previous poll used to control what is indexed
+    # activation ids from previous poll used to control what is indexed,
+    # we might have overlapping results and don't want to index the same
+    # activations twice.
     @activation_ids = Set.new
   end
 
@@ -127,55 +104,13 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
     @scheduler.stop if @scheduler
   end
 
+  # generate HTTP request options for current platform host.
   private
   def construct_request(opts)
     url = "https://#{opts['hostname']}/api/v1/namespaces/#{opts['namespace']}/activations"
     auth = {user: opts['username'], pass: opts['password']} 
     query = {docs: true, limit: 0, skip: 0, since: @logs_since}
     res = [:get, url, {:auth => auth, :query => query}]
-  end
-
-  private
-  def normalize_request(url_or_spec)
-    if url_or_spec.is_a?(String)
-      res = [:get, url_or_spec]
-    elsif url_or_spec.is_a?(Hash)
-      # The client will expect keys / values
-      spec = Hash[url_or_spec.clone.map {|k,v| [k.to_sym, v] }] # symbolize keys
-
-      # method and url aren't really part of the options, so we pull them out
-      method = (spec.delete(:method) || :get).to_sym.downcase
-      url = spec.delete(:url)
-
-      # We need these strings to be keywords!
-      spec[:auth] = {user: spec[:auth]["user"], pass: spec[:auth]["password"]} if spec[:auth]
-
-      res = [method, url, spec]
-    else
-      raise LogStash::ConfigurationError, "Invalid URL or request spec: '#{url_or_spec}', expected a String or Hash!"
-    end
-
-    validate_request!(url_or_spec, res)
-    res
-  end
-
-  private
-  def validate_request!(url_or_spec, request)
-    method, url, spec = request
-
-    raise LogStash::ConfigurationError, "Invalid URL #{url}" unless URI::DEFAULT_PARSER.regexp[:ABS_URI].match(url)
-
-    raise LogStash::ConfigurationError, "No URL provided for request! #{url_or_spec}" unless url
-    if spec && spec[:auth]
-      if !spec[:auth][:user]
-        raise LogStash::ConfigurationError, "Auth was specified, but 'user' was not!"
-      end
-      if !spec[:auth][:pass]
-        raise LogStash::ConfigurationError, "Auth was specified, but 'password' was not!"
-      end
-    end
-
-    request
   end
 
   public
@@ -260,6 +195,8 @@ class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
     @activation_ids = activation_ids
   end
 
+  # updates the query parameter for the next request
+  # based upon the last activation's end time.
   private
   def update_logs_since(ms_since_epoch)
     # actions have a maximum timeout for five minutes
