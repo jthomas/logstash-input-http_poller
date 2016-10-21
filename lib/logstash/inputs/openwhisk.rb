@@ -6,9 +6,9 @@ require "socket" # for Socket.gethostname
 require "manticore"
 require "rufus/scheduler"
 
-# This Logstash input plugin allows you to call an HTTP API, decode the output of it into event(s), and
-# send them on their merry way. The idea behind this plugins came from a need to read springboot
-# metrics endpoint, instead of configuring jmx to monitor my java application memory/gc/ etc.
+# This Logstash input plugin allows you to drain OpenWhisk Activation logs, decode the output of it into event(s), and
+# send them on their merry way. Using the OpenWhisk platform API, we poll the logs api according to the config schedule.
+# This plugin borrows heavily from the HTTP Poller input plugin. 
 #
 # ==== Example
 # Reads from a list of urls and decodes the body of the response with a codec.
@@ -17,37 +17,21 @@ require "rufus/scheduler"
 # [source,ruby]
 # ----------------------------------
 # input {
-#   http_poller {
-#     urls => {
-#       test1 => "http://localhost:9200"
-#       test2 => {
-#         # Supports all options supported by ruby's Manticore HTTP client
-#         method => get
-#         url => "http://localhost:9200/_cluster/health"
-#         headers => {
-#           Accept => "application/json"
-#         }
-#         auth => {
-#           user => "AzureDiamond"
-#           password => "hunter2"
-#         }
-#       }
-#     }
-#     request_timeout => 60
-#     # Supports "cron", "every", "at" and "in" schedules by rufus scheduler
-#     schedule => { cron => "* * * * * UTC"}
-#     codec => "json"
-#     # A hash of request metadata info (timing, response headers, etc.) will be sent here
-#     metadata_target => "http_poller_metadata"
-#   }
-# }
-#
-# input {
-#   openwhisk_logs {
+#   openwhisk {
+#     # Mandatory Configuration Parameters
 #     hostname => "openwhisk.ng.bluemix.net"
 #     username => "sample_user@email.com"
 #     password => "some_password"
+#     # Supports "cron", "every", "at" and "in" schedules by rufus scheduler
+#     schedule => { cron => "* * * * * UTC"}
+#
+#     # Optional Configuration Parameters
+#     # Namespace is optional, defaults to user's default namespace.
 #     namespace => ""
+#     request_timeout => 60
+#     codec => "json"
+#     # A hash of request metadata info (timing, response headers, etc.) will be sent here
+#     metadata_target => "http_poller_metadata"
 #   }
 # }
 #
@@ -85,17 +69,14 @@ require "rufus/scheduler"
 # ----------------------------------
 #
 
-class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
+class LogStash::Inputs::OpenWhisk < LogStash::Inputs::Base
   include LogStash::PluginMixins::HttpClient
 
-  config_name "http_poller"
+  config_name "openwhisk"
 
   default :codec, "json"
 
-  # A Hash of urls in this format : `"name" => "url"`.
-  # The name and the url will be passed in the outputed event
-  config :urls, :validate => :hash, :required => true
-
+  #
   config :hostname, :validate => :string, :required => true
   config :username, :validate => :string, :required => true
   config :password, :validate => :string, :required => true
@@ -131,26 +112,19 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   def register
     @host = Socket.gethostname.force_encoding(Encoding::UTF_8)
 
-    @logger.info("Registering http_poller Input", :type => @type,
-                 :urls => @urls, :interval => @interval, :schedule => @schedule, :timeout => @timeout)
+    @logger.info("Registering openwhisk Input", :type => @type,
+                 :hostname=> @hostname, :interval => @interval, :schedule => @schedule, :timeout => @timeout)
 
     # we will start polling for logs since the current epoch
     @logs_since = Time.now.to_i * 1000
 
     # activation ids from previous poll used to control what is indexed
     @activation_ids = Set.new
-
-    setup_requests!
   end
 
   def stop
     Stud.stop!(@interval_thread) if @interval_thread
     @scheduler.stop if @scheduler
-  end
-
-  private
-  def setup_requests!
-    @requests = Hash[@urls.map {|name, url| [name, normalize_request(url)] }]
   end
 
   private
@@ -351,7 +325,7 @@ class LogStash::Inputs::HTTP_Poller < LogStash::Inputs::Base
   def event_metadata(name, request, response=nil, execution_time=nil)
     m = {
         "name" => name,
-        "host" => @host,
+        "hostname" => @hostname,
         "request" => structure_request(request),
       }
 

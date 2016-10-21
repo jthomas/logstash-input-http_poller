@@ -1,29 +1,22 @@
 require "logstash/devutils/rspec/spec_helper"
-require 'logstash/inputs/http_poller'
+require 'logstash/inputs/openwhisk'
 require 'flores/random'
 require "timecop"
 
-describe LogStash::Inputs::HTTP_Poller do
-  let(:metadata_target) { "_http_poller_metadata" }
+describe LogStash::Inputs::OpenWhisk do
+  let(:metadata_target) { "_openwhisk_metadata" }
   let(:queue) { Queue.new }
   let(:default_schedule) {
     { "cron" => "* * * * * UTC" }
   }
   let(:default_name) { "openwhisk" }
-  let(:default_url) { "http://localhost:1827" }
-  let(:default_hostname) { "openwhisk.ng.bluemix.net" }
+  let(:default_hostname) { "localhost" }
   let(:default_username) { "user@email.com" }
   let(:default_password) { "my_password" }
   let(:default_namespace) { "user_namespace" }
-  let(:default_urls) {
-    {
-      default_name => default_url
-    }
-  }
   let(:default_opts) {
     {
       "schedule" => default_schedule,
-      "urls" => default_urls,
       "hostname" => default_hostname,
       "username" => default_username,
       "password" => default_password,
@@ -32,7 +25,7 @@ describe LogStash::Inputs::HTTP_Poller do
       "metadata_target" => metadata_target
     }
   }
-  let(:klass) { LogStash::Inputs::HTTP_Poller }
+  let(:klass) { LogStash::Inputs::OpenWhisk }
 
   describe "instances" do
     subject { klass.new(default_opts) }
@@ -60,11 +53,8 @@ describe LogStash::Inputs::HTTP_Poller do
 
     describe "#run_once" do
       it "should issue an async request for each url" do
-        #default_urls.each do |name, url|
-          # normalized_url = subject.send(:normalize_request, url)
         constructed_request = subject.send(:construct_request, default_opts)
         expect(subject).to receive(:request_async).with(queue, default_name, constructed_request).once
-        #end
 
         subject.send(:run_once, queue) # :run_once is a private method
       end
@@ -179,91 +169,6 @@ describe LogStash::Inputs::HTTP_Poller do
         it "should set query string correctly" do
           expect(result[2][:query]).to eql({docs: true, limit: 0, skip: 0, since: subject.instance_variable_get('@logs_since')})
         end
-        #
-        # time since...
-      end
-    end
-
-    describe "normalizing a request spec" do
-      shared_examples "a normalized request" do
-        it "should set the method correctly" do
-          expect(normalized.first).to eql(spec_method.to_sym)
-        end
-
-        it "should set the options to the URL string" do
-          expect(normalized[1]).to eql(spec_url)
-        end
-
-        it "should to set additional options correctly" do
-          opts = normalized.length > 2 ? normalized[2] : nil
-          expect(opts).to eql(spec_opts)
-        end
-      end
-
-      let(:normalized) { subject.send(:normalize_request, url) }
-
-      describe "a string URL" do
-        let(:url) { "http://localhost:3000" }
-        let(:spec_url) { url }
-        let(:spec_method) { :get }
-        let(:spec_opts) { nil }
-
-        include_examples("a normalized request")
-      end
-
-      describe "URL specs" do
-        context "with basic opts" do
-          let(:spec_url) { "http://localhost:3000" }
-          let(:spec_method) { "post" }
-          let(:spec_opts) { {:"X-Bender" => "Je Suis Napoleon!"} }
-
-          let(:url) do
-            {
-              "url" => spec_url,
-              "method" => spec_method,
-            }.merge(Hash[spec_opts.map {|k,v| [k.to_s,v]}])
-          end
-
-          include_examples("a normalized request")
-        end
-
-        context "missing an URL" do
-          let(:url) { {"method" => "get"} }
-
-          it "should raise an error" do
-            expect { normalized }.to raise_error(LogStash::ConfigurationError)
-          end
-        end
-
-        describe "auth" do
-          let(:url) { {"url" => "http://localhost", "method" => "get", "auth" => auth} }
-
-          context "with auth enabled but no pass" do
-            let(:auth) { {"user" => "foo"} }
-
-            it "should raise an error" do
-              expect { normalized }.to raise_error(LogStash::ConfigurationError)
-            end
-          end
-
-          context "with auth enabled, a path, but no user" do
-            let(:url) { {"method" => "get", "auth" => {"password" => "bar"}} }
-            it "should raise an error" do
-              expect { normalized }.to raise_error(LogStash::ConfigurationError)
-            end
-          end
-          context "with auth enabled correctly" do
-            let(:auth) { {"user" => "foo", "password" => "bar"} }
-
-            it "should raise an error" do
-              expect { normalized }.not_to raise_error
-            end
-
-            it "should properly set the auth parameter" do
-              expect(normalized[2][:auth]).to eql({:user => auth["user"], :pass => auth["password"]})
-            end
-          end
-        end
       end
     end
 
@@ -292,7 +197,9 @@ describe LogStash::Inputs::HTTP_Poller do
       let(:opts) {
         {
           "interval" => 2,
-          "urls" => default_urls,
+          "hostname" => default_hostname,
+          "username" => default_username,
+          "password" => default_password,
           "codec" => "json",
           "metadata_target" => metadata_target
         }
@@ -320,7 +227,9 @@ describe LogStash::Inputs::HTTP_Poller do
         {
           "interval" => 1,
           "schedule" => { "every" => "5s" },
-          "urls" => default_urls,
+          "hostname" => default_hostname,
+          "username" => default_username,
+          "password" => default_password,
           "codec" => "json",
           "metadata_target" => metadata_target
         }
@@ -342,7 +251,9 @@ describe LogStash::Inputs::HTTP_Poller do
       let(:opts) {
         {
           "schedule" => { "cron" => "* * * * * UTC" },
-          "urls" => default_urls,
+          "hostname" => default_hostname,
+          "username" => default_username,
+          "password" => default_password,
           "codec" => "json",
           "metadata_target" => metadata_target
         }
@@ -369,7 +280,9 @@ describe LogStash::Inputs::HTTP_Poller do
       let(:opts) {
         {
           "schedule" => { "at" => "2000-01-01 00:05:00 +0000"},
-          "urls" => default_urls,
+          "hostname" => default_hostname,
+          "username" => default_username,
+          "password" => default_password,
           "codec" => "json",
           "metadata_target" => metadata_target
         }
@@ -396,7 +309,9 @@ describe LogStash::Inputs::HTTP_Poller do
       let(:opts) {
         {
           "schedule" => { "every" => "2s"},
-          "urls" => default_urls,
+          "hostname" => default_hostname,
+          "username" => default_username,
+          "password" => default_password,
           "codec" => "json",
           "metadata_target" => metadata_target
         }
@@ -423,7 +338,9 @@ describe LogStash::Inputs::HTTP_Poller do
       let(:opts) {
         {
           "schedule" => { "in" => "2s"},
-          "urls" => default_urls,
+          "hostname" => default_hostname,
+          "username" => default_username,
+          "password" => default_password,
           "codec" => "json",
           "metadata_target" => metadata_target
         }
@@ -452,12 +369,8 @@ describe LogStash::Inputs::HTTP_Poller do
         expect(metadata["name"]).to eql(name)
       end
 
-      it "should have the correct request url" do
-        if url.is_a?(Hash) # If the url was specified as a complex test the whole thing
-          expect(metadata["request"]).to eql(url)
-        else # Otherwise we have to make some assumptions
-          expect(metadata["request"]["url"]).to eql(url)
-        end
+      it "should have the correct request hostname" do
+        expect(metadata["hostname"]).to eql(hostname)
       end
 
       it "should have the correct code" do
@@ -466,7 +379,7 @@ describe LogStash::Inputs::HTTP_Poller do
     }
 
     shared_examples "unprocessable_requests" do
-      let(:poller) { LogStash::Inputs::HTTP_Poller.new(settings) }
+      let(:poller) { LogStash::Inputs::OpenWhisk.new(settings) }
       subject(:event) {
         poller.send(:run_once, queue)
         queue.pop(true)
@@ -503,23 +416,12 @@ describe LogStash::Inputs::HTTP_Poller do
     end
 
     context "with a non responsive server" do
-      context "due to a non-existant host" do # Fail with handlers
+      context "due to a non-existant hostname" do # Fail with handlers
         let(:name) { default_name }
-        let(:url) { "http://thouetnhoeu89ueoueohtueohtneuohn" }
+        let(:hostname) { "http://thouetnhoeu89ueoueohtueohtneuohn" }
         let(:code) { nil } # no response expected
 
-        let(:settings) { default_opts.merge("urls" => { name => url}) }
-
-        include_examples("unprocessable_requests")
-      end
-
-      context "due to a bogus port number" do # fail with return?
-        let(:invalid_port) { Flores::Random.integer(65536..1000000) }
-
-        let(:name) { default_name }
-        let(:url) { "http://127.0.0.1:#{invalid_port}" }
-        let(:settings) { default_opts.merge("urls" => {name => url}) }
-        let(:code) { nil } # No response expected
+        let(:settings) { default_opts.merge("hostname" => hostname) }
 
         include_examples("unprocessable_requests")
       end
@@ -532,8 +434,8 @@ describe LogStash::Inputs::HTTP_Poller do
         klass.new(opts)
       }
       let(:name) { default_name }
-      let(:url) { default_url }
       let(:code) { 202 }
+      let(:hostname) { default_hostname }
 
       subject(:event) {
         queue.pop(true)
@@ -541,18 +443,18 @@ describe LogStash::Inputs::HTTP_Poller do
 
       before do
         instance.register
-        u = url.is_a?(Hash) ? url["url"] : url # handle both complex specs and simple string URLs
-        instance.client.stub(u,
+        instance.instance_variable_set("@logs_since", 0)
+        # match any response
+        instance.client.stub(%r{.},
                              :body => LogStash::Json.dump(payload),
                              :code => code
         )
         allow(instance).to receive(:decorate)
-        instance.instance_variable_set("@logs_since", 0)
         instance.send(:run_once, queue)
       end
 
       it "should have a matching message" do
-        expect(event.to_hash).to include(payload)
+        expect(event.to_hash).to include(payload[0])
       end
 
       it "should decorate the event" do
@@ -582,36 +484,6 @@ describe LogStash::Inputs::HTTP_Poller do
         end
       end
 
-      context "with a complex URL spec" do
-        let(:url) {
-          {
-            "method" => "get",
-            "url" => default_url,
-            "headers" => {
-              "X-Fry" => "I'm having one of those things, like a headache, with pictures..."
-            }
-          }
-        }
-        let(:opts) {
-          {
-            "schedule" => {
-              "cron" => "* * * * * UTC"
-              },
-            "urls" => {
-              default_name => url
-            },
-            "codec" => "json",
-            "metadata_target" => metadata_target
-          }
-        }
-
-        include_examples("matching metadata")
-
-        it "should have a matching message" do
-          expect(event.to_hash).to include(payload)
-        end
-      end
-
       context "with a specified target" do
         let(:target) { "mytarget" }
         let(:opts) { default_opts.merge("target" => target) }
@@ -620,7 +492,7 @@ describe LogStash::Inputs::HTTP_Poller do
           # When events go through the pipeline they are java-ified
           # this normalizes the payload to java types
           payload_normalized = LogStash::Json.load(LogStash::Json.dump(payload))
-          expect(event.get(target)).to include(payload_normalized)
+          expect(event.get(target)).to include(payload_normalized[0])
         end
       end
 
@@ -637,13 +509,14 @@ describe LogStash::Inputs::HTTP_Poller do
       end
 
       context "with previous activations" do
-        let(:payload) { [{"start" => 1476818509288, "activationId" => "some_id"}] }
+        let(:payload) { [{"end" => 1476818509288, "activationId" => "some_id"}] }
 
         subject(:size) {
           queue.size()
         }
         it "should not add activation to queue" do
           instance.instance_variable_set("@activation_ids", Set.new(["some_id"]))
+          queue.clear()
           instance.send(:run_once, queue)
           expect(subject).to eql(0) 
         end
