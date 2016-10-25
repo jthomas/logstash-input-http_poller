@@ -1,7 +1,5 @@
 # Logstash OpenWhisk input plugin
 
-[![Travis Build Status](https://travis-ci.org/jthomas/logstash-input-openwhisk.svg)](https://travis-ci.org/jthomas/logstash-input-openwhisk)
-
 This [Logstash](https://github.com/elastic/logstash) input plugin allows you to drain Activation logs from OpenWhisk. The HTTP polling service uses the [OpenWhisk API](https://github.com/openwhisk/openwhisk/blob/master/docs/reference.md) to retrieve logs, according to a user-defined schedule. Each activation instance is decoded to an event and forwarded into the system.
 
 This plugin is based off [logstash-input-http_poller](https://github.com/logstash-plugins/logstash-input-http_poller).
