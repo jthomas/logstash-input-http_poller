@@ -3,7 +3,7 @@ sudo: false
 language: ruby
 cache: bundler
 rvm:
-- jruby-1.7.25
+- jruby-9.0.5.0
 script: bundle exec rspec spec && bundle exec rspec spec --tag integration
 jdk: oraclejdk8
 before_install: []
